@@ -1,0 +1,17 @@
+[files]
+extend-exclude = [
+  "uv.lock",
+  # scraped from the PostGIS manual
+  "generator/snapshots/",
+  "src/peewee_gis/st/_generated/",
+]
+
+[default.extend-identifiers]
+RELEASEs = "RELEASEs"
+
+[default.extend-words]
+CPY = "CPY"
+# n-dimensional, as in PostGIS' &&& operator
+nd = "nd"
+# PostGIS operator names (&<, &>)
+overright = "overright"

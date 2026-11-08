@@ -1,0 +1,115 @@
+---
+name: tests
+
+on:  # yamllint disable-line rule:truthy
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+  pull_request:  # yamllint disable-line rule:truthy
+
+concurrency:
+  group: |
+    ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  PYTHONUNBUFFERED: "1"
+  FORCE_COLOR: "1"
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      newest: ${{ steps.set-matrix.outputs.newest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set Python matrix
+        id: set-matrix
+        uses: $/.github/actions/py-version
+
+  testing:
+    needs:
+      - generate-matrix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+
+    steps:
+      - uses: $/.github/actions/setup
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Run dependency check
+        run: uv run poe req
+
+      - name: Run tests  # setup, test, test:generator, teardown
+        run: uv run poe ci
+        env:
+          PYTEST_ADDOPTS: --runxfail -vv
+
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs: generate-matrix
+
+    steps:
+      - uses: $/.github/actions/setup
+        with:
+          python-version: ${{ needs.generate-matrix.outputs.newest }}
+
+      - name: Run linter and type checkers
+        run: uv run poe lint:ci
+
+      - name: Check formatting
+        run: uv run poe fmt:check
+
+      - name: Spell Check Repo
+        uses: crate-ci/typos@4c8b7f51ca60df14e3c5ca82770dfbbe6c3dae85 # v1.52.0
+
+  dist:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs: generate-matrix
+
+    steps:
+      - uses: $/.github/actions/setup
+        with:
+          python-version: ${{ needs.generate-matrix.outputs.newest }}
+
+      - name: Build and check (wheel built from the sdist, so the build hook runs offline from it)
+        run: uv run poe dist:all
+
+  # https://github.com/marketplace/actions/alls-green#why
+  check:  # This job does nothing and is only used for the branch protection
+    if: always()
+
+    needs:
+      - testing
+      - lint
+      - dist
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Decide whether the needed jobs succeeded or failed
+        uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
+        with:
+          jobs: ${{ toJSON(needs) }}

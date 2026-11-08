@@ -1,0 +1,39 @@
+---
+name: Set Python Test Matrix
+description: Generate Python versions matrix from pyproject requires-python
+
+inputs:
+  pkg-dir:
+    description: Path to the package directory containing pyproject.toml
+    required: false
+    default: "."
+
+outputs:
+  matrix:
+    description: JSON array of compatible CPython versions
+    value: ${{ steps.generate.outputs.matrix }}
+  newest:
+    description: Newest compatible CPython version
+    value: ${{ steps.generate.outputs.newest }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      with:
+        enable-cache: "false"
+
+    - name: Parse pyproject.toml
+      id: generate
+      shell: bash
+      env:
+        DIR: ${{ inputs.pkg-dir }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        VERSIONS="$( \
+          uv run --script "$ACTION_PATH/versions.py" "$DIR" \
+        )"
+        echo "matrix=$VERSIONS" >> "$GITHUB_OUTPUT"
+        NEWEST=$(echo "$VERSIONS" | jq -r '.[-1] // empty')
+        echo "newest=$NEWEST" >> "$GITHUB_OUTPUT"

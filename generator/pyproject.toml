@@ -1,0 +1,52 @@
+[project]
+name = "peewee_gis_generator"
+dynamic = ["version"]
+description = "Scrape the PostGIS manual and render typed, documented peewee_gis function wrappers."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+keywords = ["code-generator", "peewee", "gis", "postgis"]
+authors = [
+  { name = "johanjk", email = "johan@datarokade.com" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Topic :: Database",
+  "Topic :: Scientific/Engineering :: GIS",
+  "Topic :: Software Development :: Code Generators",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+  # render (also the only build-time requirement of peewee_gis)
+  "jinja2>=3.1.2",
+  # scrape
+  "beautifulsoup4>=4.12.2",
+  "lxml>=5.1.0",
+  "requests>=2.31.0",
+  "requests-cache>=1.2",
+  "typer>=0.20.0",
+]
+
+[project.scripts]
+peewee-gis-generator = "peewee_gis_generator.cli:main"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { root = ".." }
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/peewee_gis_generator/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/peewee_gis_generator"]
+
+[tool.pytest]
+addopts = ["-ra", "--strict-markers", "--strict-config", "--color=yes", "--no-header", "-p", "no:peewee"]
+testpaths = ["tests"]
+filterwarnings = ["once::Warning"]

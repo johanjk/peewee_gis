@@ -1,0 +1,19 @@
+# generated at build time by hatch_build.py
+/src/peewee_gis/st/_generated/
+/stubs/peewee_gis-stubs/st/
+
+src/peewee_gis/version.py
+generator/src/peewee_gis_generator/version.py
+
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+.coverage*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+test-results/
+report.html

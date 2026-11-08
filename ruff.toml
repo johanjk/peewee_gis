@@ -1,0 +1,93 @@
+target-version = "py314"
+preview = true
+output-format = "grouped"
+output-prefer-rule-codes = true
+
+line-length = 120
+
+[format]
+docstring-code-format = true
+
+[lint.flake8-type-checking]
+# Annotations of fixtures and hooks are read at runtime, e.g. by `inspect.signature`
+runtime-evaluated-decorators = ["pytest.fixture", "pytest.hookimpl"]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint]
+select = ["ALL"]
+ignore = [
+  "RUF201", # Allow output-rule-codes
+  "RUF106", # Allow output-rule-codes
+  "CPY", # Copyright
+  "ANN", # Annotations is typechecker concern
+  "DOC201", # Docstring return convention
+  "DOC402", # Docstring yield convention
+  "DOC501", # Docstring raise convention
+  "E731", # inline lambda
+  "PT022", # yielding fixtures
+  "FBT001", # boolean flags in args
+  "FBT002", # boolean flags in args
+  "A003", # shadow builtin (id table columns)
+  "TC006", # Typecast as string
+  "S101", # use of assert
+  "PT003", # explicit 'function' scope fixtures
+  "TID252", # Relative imports
+  "D100", # module level docstring
+  "D104", # package level docstring
+  "D105", # magic methods
+  "D107", # __init__
+  "D102", # public methods: documented where it isn't obvious
+  "D101",
+  "D103",
+  "PLR0913", # SQL builders take many options
+  "PLW3201", # peewee's __sql__ protocol
+  "RUF067", # small packages keep code in __init__
+  "ICN001", # import datetime
+]
+[lint.per-file-ignores]
+".github/**" = [
+  "S404", # CI scripts call tools via subprocess
+  "S607", # tools found on PATH
+  "T201", # printing is the script output
+]
+"**/__init__.py" = [
+  "F401", # re-exports
+]
+"{src/peewee_gis/st/_generated,stubs/peewee_gis-stubs}/**" = [
+  "PYI021", # the docstrings from the manual are the point of api.pyi
+  "N802", # method names mirror PostGIS: Area, MakePoint
+  "N803", # parameter names as in the manual
+  "RUF002", # the manual's typography (’, –, α)
+]
+"src/peewee_gis/sqltypes.py" = [
+  "N801", # SQL type markers are named like the SQL types
+]
+"generator/src/peewee_gis_generator/cli.py" = [
+  "FBT", # typer flags
+]
+"generator/tests/test_render.py" = [
+  "S404", "S603", "S607", # runs ruff on the rendered output
+]
+"stubs/hatch_build.py" = [
+  "INP001", # build hook script, not a package
+]
+"tests/typing/**" = [
+  "B018", # expressions are type checked, not evaluated
+  "INP001",
+]
+"{tests,generator/tests}/**/*.py" = [
+  "S101", # asserts allowed in tests...
+  "ARG", # Unused function args -> fixtures nevertheless are functionally relevant...
+  "FBT", # Don't care about booleans as positional arguments in tests, e.g. via @pytest.mark.parametrize()
+  "PLR2004", # Magic value used in comparison, ...
+  "S311", # Standard pseudo-random generators are not suitable for cryptographic purposes
+  "SLF001", # private member accessed
+  "T201", # print statement
+  "S608", # sql injection
+  "PLC2701", # tests reach into the private modules
+  "D", # docstrings
+  "E501", # long SQL strings
+  "INP001",
+]

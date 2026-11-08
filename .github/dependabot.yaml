@@ -1,0 +1,32 @@
+---
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+
+  # the PostGIS test image in dev.sh
+  - package-ecosystem: "docker"
+    directory: "/.github/docker"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7

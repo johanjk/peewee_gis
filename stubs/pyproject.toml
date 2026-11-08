@@ -1,0 +1,62 @@
+[project]
+name = "peewee_gis-stubs"
+dynamic = ["version"]
+description = "Typing and PostGIS manual docstrings for peewee_gis (PEP 561 partial stub package)."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+keywords = ["peewee", "postgis", "stubs", "typing"]
+authors = [
+  { name = "johanjk", email = "johan@datarokade.com" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Topic :: Database",
+  "Topic :: Scientific/Engineering :: GIS",
+  "Typing :: Stubs Only",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = ["peewee_gis"]
+
+[project.urls]
+Documentation = "https://github.com/johanjk/peewee_gis#typing"
+Source = "https://github.com/johanjk/peewee_gis/tree/master/stubs"
+
+[tool.uv.sources]
+peewee_gis = { workspace = true }
+
+[tool.uv]
+# rebuild the editable install when the snapshot or the generator changes
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "hatch_build.py" },
+  { file = "../generator/snapshots/*.json" },
+  { file = "../generator/src/**/*.py" },
+  { file = "../generator/src/**/*.jinja" },
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "jinja2>=3.1"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { root = ".." }
+
+# Renders peewee_gis-stubs/st/_generated/api.pyi from ../generator/snapshots (see hatch_build.py).
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["peewee_gis-stubs"]
+# editable installs: put stubs/ on the search path, where type checkers find peewee_gis-stubs/
+dev-mode-dirs = ["."]
+# gitignored, rendered by the build hook
+artifacts = ["peewee_gis-stubs/st/_generated/api.pyi"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/peewee_gis-stubs/py.typed", "/hatch_build.py", "/README.md", "/LICENSE"]
+[tool.hatch.build.targets.sdist.force-include]
+"../generator/src" = "generator/src"
+"../generator/snapshots" = "generator/snapshots"

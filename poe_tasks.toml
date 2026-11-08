@@ -1,0 +1,135 @@
+[env]
+DBDRIVER = "psycopg3"
+DBHOST = "127.0.0.1"
+DBPORT = "30000"
+DBDATABASE = "test_db"
+DBUSER = "dbuser"
+DBPASSWORD = "secret"
+
+[tasks.setup]
+cmd = "./dev.sh"
+help = "Start the PostGIS test database"
+
+[tasks.teardown]
+cmd = "./dev.sh stop"
+help = "Stop the PostGIS test database"
+
+[tasks.test]
+cmd = "pytest tests"
+help = "Run test suite"
+
+[tasks."test:generator"]
+cmd = "pytest -c generator/pyproject.toml --rootdir generator generator/tests"
+help = "Run the generator's tests (offline, no database)"
+
+[tasks.ci]
+sequence = ["setup", "test", "test:generator", "teardown"]
+help = "Run test suites with setup/teardown"
+
+[tasks.test-cov]
+sequence = [
+  { cmd = "coverage erase" },
+  { cmd = "coverage run -m pytest tests $POE_EXTRA_ARGS" },
+]
+help = "Run tests with coverage tracking, from a clean slate"
+
+[tasks.cov-report]
+sequence = [
+  { cmd = "coverage combine" },
+  { cmd = "coverage report" },
+]
+help = "Combine and display coverage results"
+
+[tasks.cov]
+sequence = ["test-cov", "cov-report"]
+help = "Run full coverage suite and print report"
+
+[tasks.req]
+cmd = "deptry src/peewee_gis"
+help = "Check dependency usage with deptry"
+
+# ------------------------------------------------------------------------------
+# CODE GENERATION
+# ------------------------------------------------------------------------------
+[tasks.generate]
+sequence = [
+  { cmd = "peewee-gis-generator render src/peewee_gis/st/_generated --only runtime" },
+  { cmd = "peewee-gis-generator render stubs/peewee_gis-stubs/st/_generated --only stubs" },
+]
+help = "Re-render catalog.py and api.pyi from the committed snapshot (also done by the build hooks)"
+[tasks."generate:refresh"]
+cmd = "peewee-gis-generator scrape"
+help = "Re-scrape the PostGIS manual into generator/snapshots (network); version from peewee_gis_generator.build"
+
+# ------------------------------------------------------------------------------
+# LINTING TASKS
+# ------------------------------------------------------------------------------
+[tasks.lint]
+cmd = "ruff check"
+
+[tasks."lint:generated"]
+# gitignored (rendered by the build hook), so ruff skips it unless told otherwise
+sequence = [
+  { cmd = "ruff check --no-respect-gitignore src/peewee_gis/st/_generated stubs/peewee_gis-stubs" },
+  { cmd = "ruff format --check --no-respect-gitignore src/peewee_gis/st/_generated stubs/peewee_gis-stubs" },
+]
+help = "Lint and format-check the generated typing"
+[tasks.fmt]
+sequence = [
+  { cmd = "ruff check --select I --select F401 --fix" },
+  { cmd = "ruff format" },
+]
+[tasks."fmt:check"]
+sequence = [
+  { cmd = "ruff check --select I --select F401 --output-format concise" },
+  { cmd = "ruff format . --diff" },
+]
+ignore_fail = false
+
+# ------------------------------------------------------------------------------
+# TYPE CHECKING TASKS
+# ------------------------------------------------------------------------------
+[tasks."types:check"]
+cmd = "pyright"
+help = "Run Pyright static type checker"
+
+[tasks."types:check-mypy"]
+cmd = "mypy src/peewee_gis"
+help = "Run MyPy type checker"
+
+[tasks."types:check-ty"]
+cmd = "ty check"
+help = "Run ty type checker"
+
+[tasks."types:verify"]
+cmd = "pyright --verifytypes peewee_gis --ignoreexternal"
+help = "Verify exported type completions with Pyright"
+
+[tasks."types:usage"]
+cmd = "pyright -p tests/typing"
+help = "Type check example usage against the generated stubs (expected errors are asserted)"
+
+[tasks."lint:ci"]
+sequence = ["req", "lint", "lint:generated", "types:check", "types:check-ty", "types:verify", "types:usage"]
+help = "Run all lint related actions in CI"
+
+# ------------------------------------------------------------------------------
+# DISTRIBUTION TASKS
+# ------------------------------------------------------------------------------
+[tasks."dist:build"]
+sequence = [
+  { cmd = "uv build" },
+  { cmd = "uv build --package peewee_gis-stubs" },
+]
+help = "Build sdists and wheels of peewee_gis and peewee_gis-stubs (the build hooks render from the snapshot)"
+
+[tasks."dist:check"]
+sequence = [
+  { cmd = "check-wheel-contents dist" },
+  { cmd = "twine check --strict dist/*.whl dist/*.tar.gz" },
+  { cmd = "python -m scripts.check_wheel" },
+]
+help = "Check the built distributions"
+
+[tasks."dist:all"]
+sequence = ["dist:build", "dist:check"]
