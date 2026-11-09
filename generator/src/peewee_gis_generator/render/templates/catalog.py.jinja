@@ -6,11 +6,18 @@ from typing import Final
 POSTGIS_VERSION: Final = {{ version | tojson }}
 
 NAMES: Final[dict[str, str]] = {
-{%- for f in functions %}
+{%- for f in st_functions %}
     {{ f.attr | tojson }}: {{ f.sql | tojson }},
 {%- endfor %}
 }
 """Attribute on ``st`` -> SQL function name."""
+
+CG_NAMES: Final[dict[str, str]] = {
+{%- for f in cg %}
+    {{ f.attr | tojson }}: {{ f.sql | tojson }},
+{%- endfor %}
+}
+"""Attribute on ``cg`` -> SQL function name (SFCGAL, ``CG_``)."""
 
 RETURNS: Final[dict[str, dict[str, str]]] = {
 {%- for f in functions if f.returns.values() | reject("equalto", "other") | list %}

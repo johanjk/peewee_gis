@@ -7,6 +7,7 @@
   manual's description, and flag wrong arity, unknown functions, or a geography-only overload
   used on a geometry. They ship separately, in [`peewee_gis-stubs`](#typing), so production
   installs don't carry them.
+* **SFCGAL on `cg`**: `Model.geom.cg.Extrude(0, 0, 10).Volume()`, switching with `.st` / `.cg`.
 * **Chaining instead of nesting.** `Model.geom.st.Transform(3857).Simplify(10).AsText()`
   renders `ST_AsText(ST_Simplify(ST_Transform("t1"."geom", 3857), 10))`.
 * **Geometry and geography fields** with [shapely](https://shapely.readthedocs.io) values:
@@ -40,6 +41,40 @@ query = (
     .order_by(Road.geom.knn(oslo))
 )
 print(query.sql())
+```
+
+Chains switch between PostGIS (`st`) and SFCGAL (`cg`, extension `postgis_sfcgal`) with
+`.st` / `.cg`; each result keeps chaining in the namespace that produced it. Building
+volumes from 2D footprints and a height column:
+
+```python
+class Building(pw.Model):
+    height = pw.FloatField()
+    footprint = pg.GeometryField(pg.GeomType.Polygon, srid=25833)
+
+    class Meta:
+        database = db
+
+
+body = (
+    Building.footprint.st
+    .MakeValid()  # st: ST_MakeValid
+    .SimplifyPreserveTopology(0.5)  # still st
+    .cg.Extrude(0, 0, Building.height)  # switch to SFCGAL: CG_Extrude
+    .MakeSolid()  # still cg
+)
+query = Building.select(
+    Building.id,
+    body.Volume().alias("volume"),  # CG_Volume
+    body.st.ZMax().alias("top"),  # back to st: ST_ZMax
+    body.st.GeometryType().alias("kind"),
+)
+assert query.sql()[0].startswith(
+    'SELECT "t1"."id", CG_Volume(CG_MakeSolid(CG_Extrude('
+    'ST_SimplifyPreserveTopology(ST_MakeValid("t1"."footprint"), %s), %s, %s, "t1"."height"))) AS "volume"'
+)
+# a 20 x 10 m footprint, 12.5 m high:
+# [{'id': 1, 'volume': 2500.0, 'top': 12.5, 'kind': 'ST_PolyhedralSurface'}]
 ```
 
 Results come back converted by SQL type: geometries as shapely objects (with their SRID),

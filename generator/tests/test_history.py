@@ -56,6 +56,12 @@ def test_spelling_changed_twice():
     assert f.deprecated == g.deprecated == "Spelled ST_ZMFlag since PostGIS 3.7: use st.ZMFlag."
 
 
+def test_spelling_changed_on_cg():
+    (f,) = history.removed(snap("3.7", fn("CG_3DArea")), [snap("3.6", fn("CG_3darea"))])
+    assert f.deprecated == "Spelled CG_3DArea since PostGIS 3.7: use cg.n3DArea."
+    assert render_function(f).deprecated == f.deprecated  # names the attribute already: no (cg.n3DArea) hint
+
+
 def test_a_leading_name_keeps_its_case():
     old = fn("ST_Old", deprecated="Deprecated since PostGIS 3.5.0. ST_New replaces it.")
     (f,) = history.removed(snap("3.7"), [snap("3.6", old)])
@@ -97,7 +103,8 @@ def test_render_snapshot_uses_older_snapshots(tmp_path):
     out = tmp_path / "out"
     render_snapshot(tmp_path / "postgis-3.7.json", out)
     api = (out / "api.pyi").read_text()
-    assert '@deprecated("Not in the PostGIS 3.7 manual (last documented in 3.6).' in api
+    assert "@deprecated(" in api
+    assert "Not in the PostGIS 3.7 manual (last documented in 3.6). Deprecated since 3.5.0: use CG_Old (cg.Old)" in api
     assert "since PostGIS 3.6 but no longer in this manual" in api
     assert '"Old": "ST_Old"' in (out / "catalog.py").read_text()  # still callable, with its result conversion
     render_snapshot(tmp_path / "postgis-3.7.json", out, older=[])

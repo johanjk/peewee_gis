@@ -4,12 +4,13 @@ import ast
 import importlib.util
 import shutil
 import subprocess
+import textwrap
 from pathlib import Path
 
 import pytest
 from peewee_gis_generator import build
 from peewee_gis_generator.model import Argument, Function, Signature, Snapshot
-from peewee_gis_generator.render import render_function, render_snapshot, select, source, typemap
+from peewee_gis_generator.render import render_function, render_snapshot, select, select_cg, source, typemap
 
 SNAPSHOT = build.snapshot_path()  # the version the packages build from
 
@@ -52,6 +53,8 @@ def test_names():
     assert typemap.py_name("ST_3DDistance") == "n3DDistance"
     assert typemap.py_name("Box2D") == "Box2D"
     assert typemap.py_name("CG_3DArea") == "CG_3DArea"
+    assert typemap.py_name("CG_3DArea", "CG_") == "n3DArea"
+    assert typemap.py_name("CG_Extrude", "CG_") == "Extrude"
 
 
 def test_render_function():
@@ -133,6 +136,17 @@ def test_deprecated_overloads():
     assert "@deprecated" not in plain.root[0]
 
 
+def test_long_deprecated_messages_fit_with_their_escapes():
+    message = " ".join(['Use "ST_New" (or \\ST_Other\\)'] * 12)
+    sig = Signature(args=[Argument("g", "geometry")], ret="geometry")
+    f = Function(name="ST_Old", url="u", summary=None, description=None, signatures=[sig], deprecated=message)
+    block = render_function(f).root[0]
+    decorator = block[: block.index("    def Old(")]
+    assert all(len(line) <= source.LINE_LENGTH for line in decorator.splitlines())
+    call = ast.parse(textwrap.dedent(decorator) + "def f(): ...").body[0].decorator_list[0]
+    assert ast.literal_eval(call.args[0]) == message
+
+
 def test_deprecated_functions_in_the_snapshot(snapshot, rendered):
     deprecated = {f.name for f in snapshot.functions if f.deprecated}
     assert {"ST_MapAlgebraExpr", "ST_MapAlgebraFct", "ST_MapAlgebraFctNgb"} <= deprecated
@@ -140,6 +154,37 @@ def test_deprecated_functions_in_the_snapshot(snapshot, rendered):
     # listed in the index as "ST_MapAlgebra (expression version)" etc.: merged into one function
     assert any(f.name == "ST_MapAlgebra" and f.other_urls for f in snapshot.functions)
     assert "from warnings import deprecated" in (rendered / "api.pyi").read_text()
+
+
+def test_cg_namespace(rendered):
+    """CG_ functions are typed on cg only; the runtime catalog maps them on both."""
+    api = (rendered / "api.pyi").read_text()
+    cg = api[api.index("class CgChainMethods[T]:") : api.index("class StRoot(Root):")]
+    st = api[api.index("class ChainMethods[T]:") : api.index("class CgChainMethods[T]:")]
+    assert "    def Extrude(self: CgChainMethods[geometry]" in cg
+    assert "-> CgChain[geometry]:" in cg
+    assert "def CG_" not in api
+    assert "def GenerateRoof" not in st
+    assert "(cg.n3DArea)" in api  # deprecation notices name the cg attribute
+    assert "(cg.n3DArea) (cg.n3DArea)" not in api
+    catalog = (rendered / "catalog.py").read_text()
+    assert '"Extrude": "CG_Extrude"' in catalog[catalog.index("CG_NAMES") :]
+    assert '"CG_Extrude"' not in catalog[: catalog.index("CG_NAMES")]  # not on st
+    assert '"CG_Extrude": {"geometry": "geometry"}' in catalog  # RETURNS: still converted
+
+
+def test_cg_hint_is_added_once():
+    sig = Signature(args=[Argument("g", "geometry")], ret="double precision")
+    f = Function(
+        name="CG_Old",
+        url="u",
+        summary=None,
+        description=None,
+        signatures=[sig],
+        deprecated="Deprecated. Use CG_New instead.",
+    )
+    (c,) = select_cg(select([f]))
+    assert c.deprecated == "Deprecated. Use CG_New (cg.New) instead."
 
 
 def test_select_rejects_names_that_are_not_identifiers():

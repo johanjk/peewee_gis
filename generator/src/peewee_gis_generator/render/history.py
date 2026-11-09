@@ -57,7 +57,9 @@ def notice(f: Function, last: str, current: str, current_name: str | None, *, re
     (default: ``current``).
     """
     if current_name is not None:
-        return f"Spelled {current_name} since PostGIS {renamed_in or current}: use st.{typemap.py_name(current_name)}."
+        space = "cg" if current_name.upper().startswith("CG_") else "st"
+        attr = typemap.py_name(current_name, f"{space.upper()}_")
+        return f"Spelled {current_name} since PostGIS {renamed_in or current}: use {space}.{attr}."
     text = f"Not in the PostGIS {current} manual (last documented in {last})."
     if f.deprecated and (m := _NOTICE.match(f.deprecated)):
         since, rest = m["since"], m["rest"].strip()

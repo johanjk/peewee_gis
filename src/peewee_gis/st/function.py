@@ -5,11 +5,16 @@
 argument. Attribute names map to SQL names through the generated catalog
 (``Area`` -> ``ST_Area``, ``n3DDistance`` -> ``ST_3DDistance``, ``Box2D`` -> ``Box2D``).
 
+``cg`` does the same for the SFCGAL functions (``CG_``): ``Model.geom.cg.Extrude(0, 0, 10)``
+renders ``CG_Extrude(...)``. A result chains in the namespace that produced it;
+``.st`` and ``.cg`` switch: ``geom.st.MakeValid().cg.Extrude(0, 0, 10).st.AsText()``.
+
 The result of a call is converted according to its SQL type: geometry and geography
 become shapely geometries, box2d/box3d tuples, everything else is left to the
 database driver. ``.raw()`` turns conversion off.
 """
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Self, cast, override
 
 import peewee as pw
@@ -27,6 +32,7 @@ except ImportError:  # pragma: no cover - only without a build (no generated cat
     _catalog = None
 
 NAMES: dict[str, str] = dict(_catalog.NAMES) if _catalog else {}
+CG_NAMES: dict[str, str] = dict(getattr(_catalog, "CG_NAMES", {})) if _catalog else {}
 RETURNS: dict[str, dict[str, str]] = dict(_catalog.RETURNS) if _catalog else {}
 
 if TYPE_CHECKING:
@@ -34,17 +40,79 @@ if TYPE_CHECKING:
     from types import ModuleType
 
     from ..sqltypes import geography, geometry
-    from ._generated.api import StBound
+    from ._generated.api import CgBound, StBound
+
+
+@dataclass(frozen=True, slots=True)
+class Space:
+    """A function namespace: its SQL prefix and the generated attribute -> SQL name map."""
+
+    name: str
+    prefix: str
+    names: Mapping[str, str]
+    others: Mapping[str, tuple[str, str]] = field(default_factory=dict[str, tuple[str, str]])
+    """Attribute (or upper-cased SQL name) -> ``(namespace, attribute)`` that has it:
+    ``cg.AsText`` is ``st.AsText``, ``st.GenerateRoof`` and ``st.CG_3DArea`` are on ``cg``."""
+    elsewhere: Mapping[str, str] = field(default_factory=dict[str, str])
+    """SQL prefix -> namespace for names not in the catalog: ``CG_`` names belong on ``cg``, and no
+    namespace takes a prefixed name (``st.ST_Foo`` would call ``ST_ST_Foo``)."""
+
+    def sql_name(self, attr: str) -> str:
+        """SQL function name for an attribute; ``AttributeError`` for another namespace's function."""
+        if (name := self.names.get(attr)) is not None:
+            return name
+        if (other := self.others.get(attr) or self.others.get(attr.upper())) is None:
+            for prefix, space in self.elsewhere.items():
+                if attr.upper().startswith(prefix):
+                    rest = attr[len(prefix) :]
+                    other = (space, f"n{rest}" if rest[:1].isdigit() else rest)
+        if other is not None:
+            space, there = other
+            if space == self.name:
+                msg = f"{attr}: {space} adds the {self.prefix} prefix, use {space}.{there}"
+            else:
+                msg = f"{attr} is not on {self.name}: use {space}.{there}, or .{space}.{there}() on a result"
+            raise AttributeError(msg)
+        # not in the catalog (newer PostGIS?): the prefix, n3DFoo -> ST_3DFoo
+        if len(attr) > 1 and attr[0] == "n" and attr[1].isdigit():
+            attr = attr[1:]
+        return f"{self.prefix}{attr}"
+
+
+def _by_sql(space: str, names: Mapping[str, str]) -> dict[str, tuple[str, str]]:
+    """Upper-cased SQL name -> attribute: ``st.CG_3DArea``, ``cg.ST_Area``, ``st.ST_Area`` are mistakes."""
+    return {sql.upper(): (space, attr) for attr, sql in names.items()}
+
+
+PREFIXES = {"ST_": "st", "CG_": "cg"}
+ST = Space(
+    "st",
+    "ST_",
+    NAMES,
+    others={
+        **{attr: ("cg", attr) for attr in CG_NAMES.keys() - NAMES.keys()},  # SFCGAL only: GenerateRoof
+        **_by_sql("cg", CG_NAMES),
+        **_by_sql("st", NAMES),
+    },
+    elsewhere=PREFIXES,
+)
+CG = Space(
+    "cg",
+    "CG_",
+    CG_NAMES,
+    others={
+        **{attr: ("st", attr) for attr in NAMES.keys() - CG_NAMES.keys()},
+        **_by_sql("st", NAMES),
+        **_by_sql("cg", CG_NAMES),
+    },
+    elsewhere=PREFIXES,
+)
+"""SFCGAL (extension ``postgis_sfcgal``)."""
 
 
 def sql_name(attr: str) -> str:
     """SQL function name for an attribute of ``st``."""
-    if (name := NAMES.get(attr)) is not None:
-        return name
-    # not in the catalog (newer PostGIS?): ST_ prefix, n3DFoo -> ST_3DFoo
-    if len(attr) > 1 and attr[0] == "n" and attr[1].isdigit():
-        attr = attr[1:]
-    return f"ST_{attr}"
+    return ST.sql_name(attr)
 
 
 def category(node: object) -> str | None:
@@ -84,9 +152,10 @@ class NamedArgument(pw.Node):
 
 
 class _Namespace:
-    """Resolves attributes to function calls; see :func:`sql_name`."""
+    """Resolves attributes to function calls; see :meth:`Space.sql_name`."""
 
     _schema: str | None
+    _space: Space = ST
 
     def _call(self, name: str, args: Iterable[object], kwargs: Mapping[str, object]) -> STFunction:
         raise NotImplementedError
@@ -97,7 +166,7 @@ class _Namespace:
         def __getattr__(self, attr: str) -> Callable[..., STFunction]:
             if attr.startswith("_"):
                 raise AttributeError(attr)
-            name = sql_name(attr)
+            name = self._space.sql_name(attr)
 
             def call(*args: object, **kwargs: object) -> STFunction:
                 return self._call(name, args, kwargs)
@@ -107,33 +176,38 @@ class _Namespace:
 
     @override
     def __dir__(self) -> Iterable[str]:
-        return [*super().__dir__(), *NAMES]
+        return [*super().__dir__(), *self._space.names]
 
 
 class Root(_Namespace):
-    """``st``: every PostGIS function, ``st.MakePoint(10.7, 59.9)``."""
+    """``st``: every PostGIS function, ``st.MakePoint(10.7, 59.9)``; ``cg``: the SFCGAL ones."""
 
-    def __init__(self, schema: str | None = None) -> None:
+    def __init__(self, schema: str | None = None, space: Space = ST) -> None:
         super().__init__()
         self._schema = schema
+        self._space = space
 
     @override
     def _call(self, name: str, args: Iterable[object], kwargs: Mapping[str, object]) -> STFunction:
-        return STFunction(name, args, kwargs, schema=self._schema)
+        return result_class(self._space)(name, args, kwargs, schema=self._schema)
 
     def on(self, node: object) -> StBound[Any]:
-        """Functions with ``node`` as first argument: ``st.on(subq.c.geom).Area()``."""
-        return cast("StBound[Any]", Bound(node, schema=self._schema))
+        """Functions with ``node`` as first argument: ``st.on(subq.c.geom).Area()``.
+
+        ``CgRoot`` (``cg``) is typed with ``CgBound``.
+        """
+        return cast("StBound[Any]", Bound(node, schema=self._schema, space=self._space))
 
     __getitem__ = on
 
     def in_schema(self, schema: str | None) -> Self:
         """Schema-qualified calls, for PostGIS installed outside the ``search_path``."""
-        return type(self)(schema)
+        return type(self)(schema, self._space)
 
     @override
     def __repr__(self) -> str:
-        return f"<st schema={self._schema!r}>" if self._schema else "<st>"
+        name = self._space.name
+        return f"<{name} schema={self._schema!r}>" if self._schema else f"<{name}>"
 
 
 class Bound(_Namespace):
@@ -142,18 +216,19 @@ class Bound(_Namespace):
     def __class_getitem__(cls, item: object) -> type[Self]:
         return cls
 
-    def __init__(self, node: object, schema: str | None = None) -> None:
+    def __init__(self, node: object, schema: str | None = None, space: Space = ST) -> None:
         super().__init__()
         self._node = node
         self._schema = schema
+        self._space = space
 
     @override
     def _call(self, name: str, args: Iterable[object], kwargs: Mapping[str, object]) -> STFunction:
-        return STFunction(name, (self._node, *args), kwargs, schema=self._schema)
+        return result_class(self._space)(name, (self._node, *args), kwargs, schema=self._schema)
 
     @override
     def __repr__(self) -> str:
-        return f"<st on {self._node!r}>"
+        return f"<{self._space.name} on {self._node!r}>"
 
 
 class STFunction(SpatialOperators, _Namespace, pw.Function):
@@ -184,7 +259,7 @@ class STFunction(SpatialOperators, _Namespace, pw.Function):
 
     @override
     def _call(self, name: str, args: Iterable[object], kwargs: Mapping[str, object]) -> STFunction:
-        return STFunction(name, (self, *args), kwargs, schema=self._schema)
+        return result_class(self._space)(name, (self, *args), kwargs, schema=self._schema)
 
     def raw(self) -> Self:
         """Return the driver's value, without conversion to shapely/tuples."""
@@ -206,8 +281,24 @@ class STFunction(SpatialOperators, _Namespace, pw.Function):
 
     @property
     def st(self) -> StBound[Any]:
-        """Same as chaining directly; for symmetry with fields and casts."""
-        return cast("StBound[Any]", Bound(self, schema=self._schema))
+        """PostGIS (``ST_``) functions on this result; chaining directly does the same on ``st`` results."""
+        return cast("StBound[Any]", Bound(self, schema=self._schema, space=ST))
+
+    @property
+    def cg(self) -> CgBound[Any]:
+        """SFCGAL (``CG_``) functions on this result: ``geom.st.MakeValid().cg.Extrude(0, 0, 10)``."""
+        return cast("CgBound[Any]", Bound(self, schema=self._schema, space=CG))
+
+
+class CGFunction(STFunction):
+    """An SFCGAL function call (``CG_``); further calls chain on ``cg``, ``.st`` switches back."""
+
+    _space = CG
+
+
+def result_class(space: Space) -> type[STFunction]:
+    """Class of a call in ``space``: results chain in the namespace that produced them."""
+    return CGFunction if space is CG else STFunction
 
 
 class Cast(SpatialOperators, pw.Cast):
@@ -244,6 +335,11 @@ class GeometryCast(Cast):
     @override
     def st(self) -> StBound[geometry]:
         return cast("StBound[geometry]", Bound(self))
+
+    @property
+    def cg(self) -> CgBound[geometry]:
+        """SFCGAL functions on the cast value (geometry only: SFCGAL has no geography functions)."""
+        return cast("CgBound[geometry]", Bound(self, space=CG))
 
 
 class GeographyCast(Cast):

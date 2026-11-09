@@ -30,6 +30,12 @@ def load_geometry(value: object) -> shapely.Geometry | None:
         except NotImplementedError as err:  # shapely has no curve geometries
             msg = f"{err}; convert in SQL, e.g. `.st.CurveToLine()`, or select it with `.raw()`"
             raise NotImplementedError(msg) from err
+        except shapely.errors.GEOSException as err:
+            if "Unknown WKB type" not in str(err):
+                raise
+            # PolyhedralSurface, TIN, Triangle (SFCGAL results): not in GEOS
+            msg = f"{err}: shapely (GEOS) has no PolyhedralSurface, TIN or Triangle; select `.st.AsText()` or `.raw()`"
+            raise NotImplementedError(msg) from err
     msg = f"cannot load a geometry from {type(value).__name__}"
     raise TypeError(msg)
 

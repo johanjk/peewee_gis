@@ -65,6 +65,53 @@ def test_schema_qualified():
     assert sql(st.Area(Poly.geom).Buffer(1))[0] == '"extensions".ST_Buffer("extensions".ST_Area("t1"."geom"), %s)'
 
 
+def test_cg_namespace():
+    """SFCGAL functions without the CG_ prefix; results chain on cg, .st/.cg switch."""
+    assert sql(Poly.geom.cg.Extrude(0, 0, 10))[0] == 'CG_Extrude("t1"."geom", %s, %s, %s)'
+    assert sql(Poly.geom.cg.Extrude(0, 0, 10).MakeSolid().Volume())[0] == (
+        'CG_Volume(CG_MakeSolid(CG_Extrude("t1"."geom", %s, %s, %s)))'
+    )
+    assert sql(Poly.geom.st.MakeValid().cg.Extrude(0, 0, 1).st.AsText())[0] == (
+        'ST_AsText(CG_Extrude(ST_MakeValid("t1"."geom"), %s, %s, %s))'
+    )
+    assert sql(pg.cg.n3DArea(Poly.geom))[0] == 'CG_3DArea("t1"."geom")'
+    # SFCGAL is on cg only, at runtime too, with the way there in the message
+    with pytest.raises(AttributeError, match=r"use cg\.n3DArea"):
+        pg.st.CG_3DArea(Poly.geom)  # pyright: ignore[reportAttributeAccessIssue]
+    with pytest.raises(AttributeError, match=r"use cg\.Extrude"):
+        Poly.geom.st.MakeValid().CG_Extrude  # pyright: ignore[reportArgumentType]  # ruff: ignore[B018]
+    assert not hasattr(pg.st, "CG_Volume")
+    assert "CG_Volume" not in dir(pg.st)
+    with pytest.raises(AttributeError, match=r"use cg\.Extrude"):  # the attribute, whatever the case
+        pg.st.cg_extrude  # pyright: ignore[reportAttributeAccessIssue]  # ruff: ignore[B018]
+    # no namespace takes a prefixed name (cg.CG_Extrude would call CG_CG_Extrude)
+    with pytest.raises(AttributeError, match=r"cg adds the CG_ prefix, use cg\.Extrude"):
+        pg.cg.CG_Extrude  # pyright: ignore[reportAttributeAccessIssue]  # ruff: ignore[B018]
+    with pytest.raises(AttributeError, match=r"not on cg: use st\.Area"):
+        Poly.geom.cg.ST_Area  # pyright: ignore[reportAttributeAccessIssue]  # ruff: ignore[B018]
+    with pytest.raises(AttributeError, match=r"st adds the ST_ prefix, use st\.Area"):
+        pg.st.ST_Area  # pyright: ignore[reportAttributeAccessIssue]  # ruff: ignore[B018]
+    with pytest.raises(AttributeError, match=r"use cg\.SomethingNew"):  # not in the catalog either
+        pg.cg.CG_SomethingNew  # pyright: ignore[reportAttributeAccessIssue]  # ruff: ignore[B018]
+    with pytest.raises(AttributeError, match=r"use cg\.GenerateRoof"):  # SFCGAL only: no ST_GenerateRoof
+        Poly.geom.st.MakeValid().GenerateRoof  # pyright: ignore[reportArgumentType]  # ruff: ignore[B018]
+    # and st functions are not on cg: the prefix fallback would call CG_AsText
+    with pytest.raises(AttributeError, match=r"use st\.AsText, or \.st\.AsText\(\) on a result"):
+        Poly.geom.cg.Extrude(0, 0, 1).AsText  # pyright: ignore[reportArgumentType]  # ruff: ignore[B018]
+    assert sql(pg.cg.n3DArea(Poly.geom).st.AsText())[0] == 'ST_AsText(CG_3DArea("t1"."geom"))'
+    assert not hasattr(Poly.big.as_geography(), "cg")  # SFCGAL has no geography functions
+    assert sql(pg.cg.on(Poly.geom).Tesselate())[0] == 'CG_Tesselate("t1"."geom")'
+    assert sql(pg.cg.in_schema("ext").Tesselate(Poly.geom))[0] == '"ext".CG_Tesselate("t1"."geom")'
+    assert sql(Poly.big.as_geometry().cg.Volume())[0] == 'CG_Volume(CAST("t1"."big" AS geometry))'
+    assert isinstance(Poly.geom.cg.Extrude(0, 0, 1), pg.CGFunction)
+    assert not isinstance(Poly.geom.cg.Extrude(0, 0, 1).st.Area(), pg.CGFunction)
+    # not in the catalog: the prefix, as on st
+    assert sql(pg.cg.SomethingNew(Poly.geom))[0] == 'CG_SomethingNew("t1"."geom")'
+    assert sql(pg.cg.n4DThing(Poly.geom))[0] == 'CG_4DThing("t1"."geom")'
+    assert "Extrude" in dir(pg.cg)
+    assert repr(pg.cg) == "<cg>"
+
+
 def test_identifiers_are_quoted_or_rejected():
     assert sql(pg.st.in_schema('we"ird').Area(Poly.geom))[0] == '"we""ird".ST_Area("t1"."geom")'
     with pytest.raises(ValueError, match="invalid function name"):

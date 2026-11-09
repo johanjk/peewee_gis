@@ -32,7 +32,7 @@ assert sql(Area.geom.st.Transform(3857).Area())[0] == 'ST_Area(ST_Transform("t1"
 ```
 
 Names that start with a digit get an `n`: `st.n3DDistance` is `ST_3DDistance`. Functions without
-the prefix keep their name: `st.Box2D`, `st.postgis_srs_codes`, `st.CG_3DArea` (SFCGAL).
+the prefix keep their name: `st.Box2D`, `st.postgis_srs_codes`.
 Topology and tiger geocoder functions are not included; they live in their own schemas
 (use `pw.fn`).
 
@@ -42,6 +42,28 @@ Topology and tiger geocoder functions are not included; they live in their own s
 sub = Area.select(Area.geom.st.Centroid().alias("c")).alias("sub")
 assert sql(pg.st.on(sub.c.c).X())[0] == 'ST_X("sub"."c")'
 ```
+
+## SFCGAL: `cg`
+
+The SFCGAL functions (`CG_`, extension `postgis_sfcgal`) are on `pg.cg` and `.cg`, without
+the prefix: `cg.Extrude` is `CG_Extrude`, `cg.n3DArea` is `CG_3DArea`. A result chains in
+the namespace that produced it, and `.st` / `.cg` switch:
+
+```python
+assert sql(Area.geom.cg.Extrude(0, 0, 10).MakeSolid().Volume())[0] == (
+    'CG_Volume(CG_MakeSolid(CG_Extrude("t1"."geom", %s, %s, %s)))'
+)
+assert sql(Area.geom.st.MakeValid().cg.Extrude(0, 0, 10).st.AsText())[0] == (
+    'ST_AsText(CG_Extrude(ST_MakeValid("t1"."geom"), %s, %s, %s))'
+)
+```
+
+SFCGAL works on geometry: a geography column or cast has no `.cg`, use `.as_geometry().cg`.
+`CG_` names are not on `st`: `st.CG_Extrude` and `st.GenerateRoof` (SFCGAL only) raise
+`AttributeError` pointing to `cg.Extrude` and `cg.GenerateRoof`. Neither namespace takes the
+prefix itself: `cg.CG_Extrude` and `st.ST_Area` raise too.
+Likewise an `st` function on a `cg` result (`.cg.Extrude(0, 0, 10).AsText()`) raises,
+pointing to `.st.AsText()`.
 
 Optional arguments can be passed by name (PostgreSQL's `name => value`):
 
@@ -121,7 +143,9 @@ The catalog knows each function's result type (per type of its first argument):
 `pg.load_geometry` converts.
 
 Curves (CircularString, ...) can't be represented in shapely; select them with
-`.st.CurveToLine()`, or `.raw()`.
+`.st.CurveToLine()`, or `.raw()`. Neither can PolyhedralSurface, TIN and Triangle, which many
+SFCGAL functions return: select them with `.st.AsText()` (or `.raw()` for the WKB), or reduce
+them in SQL first (`.cg.Volume()`, `.cg.n3DArea()`).
 
 ## Operators
 

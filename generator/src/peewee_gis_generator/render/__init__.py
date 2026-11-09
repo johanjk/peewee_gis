@@ -15,7 +15,8 @@ import builtins
 import json
 import keyword
 import re
-from dataclasses import dataclass
+import textwrap
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -48,6 +49,23 @@ class Rendered:
     chain: list[str]
     returns: dict[str, str]
     deprecated: str | None = None
+    source: Function | None = field(default=None, compare=False, repr=False)
+    """The (corrected) function it was rendered from, before the ``cg.X`` hints."""
+
+
+@dataclass(frozen=True, slots=True)
+class Space:
+    """A function namespace: ``st`` (``ST_``) or ``cg`` (``CG_``, SFCGAL)."""
+
+    prefix: str
+    methods: str
+    """Class with the chained methods, e.g. ``ChainMethods``."""
+    chain: str
+    """Result class, e.g. ``StChain``."""
+
+
+ST = Space("ST_", "ChainMethods", "StChain")
+CG = Space("CG_", "CgChainMethods", "CgChain")
 
 
 def _param_name(name: str, seen: set[str]) -> str:
@@ -118,7 +136,16 @@ def _overloads(
     unique = list({(tuple(p), r): (p, r) for p, r in sigs}.values())
     deco = f"{source.METHOD_INDENT}@overload\n" if len(unique) > 1 else ""
     if deprecated is not None:
-        deco += f"{source.METHOD_INDENT}@deprecated({_py_string(deprecated)})\n"
+        one_line = f"{source.METHOD_INDENT}@deprecated({_py_string(deprecated)})"
+        if len(one_line) <= source.LINE_LENGTH:
+            deco += one_line + "\n"
+        else:  # as ruff format lays it out (COM812: trailing comma); long messages split into adjacent literals
+            width = source.LINE_LENGTH - len(source.BODY_INDENT) - 3  # quotes and the comma
+            # wrapped escaped (\" counts as two); escapes have no whitespace or hyphen to split at
+            escaped = _py_string(deprecated)[1:-1]
+            parts = textwrap.wrap(escaped, width, break_long_words=False, drop_whitespace=False)
+            lines = "\n".join(f'{source.BODY_INDENT}"{p}"' for p in parts)
+            deco += f"{source.METHOD_INDENT}@deprecated(\n{lines},\n{source.METHOD_INDENT})\n"
     return [f"{deco}{source.signature(name, params, ret)}\n{doc}" for params, ret in unique]
 
 
@@ -127,15 +154,32 @@ def _py_string(text: str) -> str:
     return json.dumps(text, ensure_ascii=False)
 
 
-def render_function(f: Function) -> Rendered:
-    attr = typemap.py_name(f.name)
+def _with_cg_names(text: str) -> str:
+    """``Use CG_3DArea instead`` -> ``Use CG_3DArea (cg.n3DArea) instead``: what to type.
+
+    Left alone where the text already names the attribute (``Spelled CG_3DArea ...: use cg.n3DArea``).
+    """
+
+    def hint(m: re.Match[str]) -> str:
+        attr = f"cg.{typemap.py_name(m[1], CG.prefix)}"
+        return m[0] if re.search(rf"\b{re.escape(attr)}\b", text) else f"{m[1]} ({attr})"
+
+    return re.sub(r"\b(CG_\w+)\b", hint, text)
+
+
+def render_function(f: Function, space: Space = ST) -> Rendered:
+    """``f`` in ``space``; on ``cg`` only ``CG_`` functions belong."""
+    original = f
+    if f.deprecated:
+        f = replace(f, deprecated=_with_cg_names(f.deprecated))
+    attr = typemap.py_name(f.name, space.prefix)
     doc = _doc(f)
 
     root: list[tuple[list[str], str]] = []
     chain: list[tuple[list[str], str]] = []
     returns: dict[str, str] = {}
     for sig in f.signatures:
-        ret = f"StChain[{typemap.marker(sig.ret)}]"
+        ret = f"{space.chain}[{typemap.marker(sig.ret)}]"
         root.append((["self", *_params(sig, skip_first=False)], ret))
         first = typemap.category(sig.args[0].type_) if sig.args else ""
         cat = typemap.category(sig.ret)
@@ -143,7 +187,7 @@ def render_function(f: Function) -> Rendered:
         returns[first] = cat if returns.get(first, cat) == cat else "other"
         if sig.args:
             this = typemap.marker(sig.args[0].type_)
-            chain.append(([f"self: ChainMethods[{this}]", *_params(sig, skip_first=True)], ret))
+            chain.append(([f"self: {space.methods}[{this}]", *_params(sig, skip_first=True)], ret))
 
     return Rendered(
         attr=attr,
@@ -152,6 +196,7 @@ def render_function(f: Function) -> Rendered:
         chain=_overloads(attr, chain, doc, f.deprecated),
         returns=dict(returns),
         deprecated=f.deprecated,
+        source=original,
     )
 
 
@@ -179,6 +224,20 @@ def select(functions: Iterable[Function], taken: Iterable[Rendered] = ()) -> lis
             raise ValueError(msg)
         out[r.attr] = r
     return sorted(out.values(), key=lambda r: r.attr.lower())
+
+
+def select_cg(rendered: Iterable[Rendered]) -> list[Rendered]:
+    """The ``CG_`` functions of ``rendered`` (SFCGAL) again, for the ``cg`` namespace."""
+    out: dict[str, Rendered] = {}
+    for r in rendered:
+        if r.source is None or not r.sql.upper().startswith(CG.prefix):
+            continue
+        c = render_function(r.source, CG)
+        if keyword.iskeyword(c.attr) or c.attr in out:
+            msg = f"cg attribute {c.attr!r} for {r.sql} is a keyword or taken"
+            raise ValueError(msg)
+        out[c.attr] = c
+    return sorted(out.values(), key=lambda c: c.attr.lower())
 
 
 MARKERS = ("box2d", "box3d", "geography", "geometry", "json", "raster", "record", "spheroid")
@@ -221,6 +280,7 @@ def render_snapshot(
     current = select(snap.functions)
     gone = select(history.removed(snap, past), taken=current)
     funcs = sorted([*current, *gone], key=lambda r: r.attr.lower())
+    cg = select_cg(funcs)
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(TEMPLATES),
         keep_trailing_newline=True,
@@ -229,9 +289,11 @@ def render_snapshot(
     ctx = {
         "version": snap.postgis_version,
         "oldest": min((s.postgis_version for s in past), key=history.version_key, default=None),
-        "functions": funcs,
+        "functions": funcs,  # RETURNS: result categories of every SQL name
+        "st_functions": [f for f in funcs if not f.sql.upper().startswith(CG.prefix)],  # CG_ only on cg
+        "cg": cg,
         "snapshot": snapshot.name,
-        "markers": used_markers(funcs),
+        "markers": used_markers([*funcs, *cg]),
         "uses_deprecated": any(f.deprecated for f in funcs),
     }
     output_dir.mkdir(parents=True, exist_ok=True)

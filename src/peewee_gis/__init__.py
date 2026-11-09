@@ -2,6 +2,7 @@
 
 * ``st``: every PostGIS function, typed and documented from the PostGIS manual, chainable:
   ``Model.geom.st.Transform(3857).Simplify(10)``.
+* ``cg``: the SFCGAL functions (``CG_``) the same way: ``Model.geom.cg.Extrude(0, 0, 10)``.
 * ``GeometryField`` / ``GeographyField``: columns with shapely values.
 * ``to_tile_fn``: Mapbox vector tile functions for Martin.
 """
@@ -13,7 +14,7 @@ from .convert import literal, load_box2d, load_box3d, load_geometry
 from .fields import Dim, GeographyField, GeometryField, GeomType, SpatialField, to_shapely
 from .helpers import clean, copy_geometries, feature_collection, gist_index
 from .operators import SpatialOperators
-from .st import Cast, NamedArgument, Root, STFunction, st
+from .st import Cast, CGFunction, NamedArgument, Root, STFunction, cg, st
 from .tiles import TileFunction, TileRegistry, martin_config, tile_query, to_tile_fn
 
 try:
@@ -23,6 +24,7 @@ except ImportError:  # pragma: no cover
 
 __all__ = [
     "SRID",
+    "CGFunction",
     "Cast",
     "CreateExtension",
     "Dim",
@@ -40,6 +42,7 @@ __all__ = [
     "Volatility",
     "__version__",
     "as_srid",
+    "cg",
     "clean",
     "copy_geometries",
     "create_extensions",

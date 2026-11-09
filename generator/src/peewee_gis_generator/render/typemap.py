@@ -111,14 +111,15 @@ def py_identifier(name: str) -> str:
     return name
 
 
-def py_name(sql_name: str) -> str:
-    """Attribute name on ``st`` for an SQL function name.
+def py_name(sql_name: str, prefix: str = "ST_") -> str:
+    """Attribute name for an SQL function name, in the namespace of ``prefix``.
 
-    ``ST_Area`` -> ``Area``, ``ST_3DDistance`` -> ``n3DDistance``; other names are kept
-    (``Box2D``, ``CG_3DArea``, ``postgis_srs``).
+    On ``st``: ``ST_Area`` -> ``Area``, ``ST_3DDistance`` -> ``n3DDistance``; other names
+    are kept (``Box2D``, ``CG_3DArea``, ``postgis_srs``). On ``cg`` (``prefix="CG_"``):
+    ``CG_Extrude`` -> ``Extrude``, ``CG_3DArea`` -> ``n3DArea``.
     """
-    if sql_name.upper().startswith("ST_"):
-        name = sql_name[3:]
+    if sql_name.upper().startswith(prefix):
+        name = sql_name[len(prefix) :]
         if name[0].isdigit():
             name = f"n{name}"
         return py_identifier(name)

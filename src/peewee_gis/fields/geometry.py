@@ -10,12 +10,12 @@ import shapely.geometry
 from .._srid import SRID, as_srid
 from ..convert import Category, load_geometry, to_ewkb_hex
 from ..operators import SpatialOperators
-from ..st.function import Bound, Cast, GeographyCast, GeometryCast, STFunction, make_cast
+from ..st.function import CG, Bound, Cast, GeographyCast, GeometryCast, STFunction, make_cast
 from .types import Dim, GeomType
 
 if TYPE_CHECKING:
     from ..sqltypes import geography, geometry
-    from ..st._generated.api import StBound
+    from ..st._generated.api import CgBound, StBound
 
     _Field = pw.Field[shapely.Geometry | None]
 else:
@@ -181,6 +181,11 @@ class GeometryField(SpatialField):
     def st(self) -> StBound[geometry]:
         """PostGIS functions on this column: ``Model.geom.st.Transform(3857).Area()``."""
         return cast("StBound[geometry]", Bound(self))
+
+    @property
+    def cg(self) -> CgBound[geometry]:
+        """SFCGAL functions on this column: ``Model.geom.cg.Extrude(0, 0, 10).Volume()``."""
+        return cast("CgBound[geometry]", Bound(self, space=CG))
 
 
 class GeographyField(SpatialField):
