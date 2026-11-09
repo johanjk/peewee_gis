@@ -7,11 +7,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from peewee_gis_generator import build
 from peewee_gis_generator.model import Argument, Function, Signature, Snapshot
 from peewee_gis_generator.render import render_function, render_snapshot, select, source, typemap
 
-SNAPSHOTS = Path(__file__).parents[1] / "snapshots"
-SNAPSHOT = SNAPSHOTS / "postgis-3.6.json"
+SNAPSHOT = build.snapshot_path()  # the version the packages build from
 
 
 @pytest.fixture(scope="module")
@@ -49,7 +49,7 @@ def test_typemap():
 
 def test_names():
     assert typemap.py_name("ST_Area") == "Area"
-    assert typemap.py_name("ST_3DArea") == "n3DArea"
+    assert typemap.py_name("ST_3DDistance") == "n3DDistance"
     assert typemap.py_name("Box2D") == "Box2D"
     assert typemap.py_name("CG_3DArea") == "CG_3DArea"
 
@@ -78,7 +78,7 @@ def test_select_has_no_collisions(snapshot):
     funcs = select(snapshot.functions)
     names = [f.attr for f in funcs]
     assert len(names) == len(set(names))
-    assert {"Area", "Transform", "AsMVT", "AsMVTGeom", "TileEnvelope", "n3DArea", "Box2D"} <= set(names)
+    assert {"Area", "Transform", "AsMVT", "AsMVTGeom", "TileEnvelope", "n3DDistance", "Box2D"} <= set(names)
     assert "AddEdgeModFace" not in names  # topology schema
 
 
@@ -116,6 +116,30 @@ def test_docstring_layout():
     assert all(len(line) <= source.LINE_LENGTH for line in doc)
     assert source.docstring("ST_X: no stop", []) == '        """ST_X: no stop.\n        """'
     assert source.docstring("Fine!", []).startswith('        """Fine!')
+
+
+def test_deprecated_overloads():
+    """Every overload of a deprecated function gets @deprecated, below @overload."""
+    sigs = [
+        Signature(args=[Argument("g", "geometry")], ret="geometry"),
+        Signature(args=[Argument("g", "geometry"), Argument("n", "integer")], ret="geometry"),
+    ]
+    f = Function(name="ST_Old", url="u", summary="Old.", description=None, signatures=sigs, deprecated="Use ST_New.")
+    r = render_function(f)
+    for block in (*r.root, *r.chain):
+        assert block.startswith('    @overload\n    @deprecated("Use ST_New.")\n    def Old(')
+        assert "Use ST_New." in block.split('"""')[1]  # and in the docstring
+    plain = render_function(Function(name="ST_X", url="u", summary=None, description=None, signatures=sigs[:1]))
+    assert "@deprecated" not in plain.root[0]
+
+
+def test_deprecated_functions_in_the_snapshot(snapshot, rendered):
+    deprecated = {f.name for f in snapshot.functions if f.deprecated}
+    assert {"ST_MapAlgebraExpr", "ST_MapAlgebraFct", "ST_MapAlgebraFctNgb"} <= deprecated
+    assert "ST_MapAlgebra" not in deprecated
+    # listed in the index as "ST_MapAlgebra (expression version)" etc.: merged into one function
+    assert any(f.name == "ST_MapAlgebra" and f.other_urls for f in snapshot.functions)
+    assert "from warnings import deprecated" in (rendered / "api.pyi").read_text()
 
 
 def test_select_rejects_names_that_are_not_identifiers():

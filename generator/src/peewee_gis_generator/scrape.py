@@ -3,6 +3,7 @@
 import re
 import warnings
 from concurrent.futures import ThreadPoolExecutor
+from http import HTTPStatus
 from itertools import zip_longest
 from typing import TYPE_CHECKING
 from urllib.parse import urljoin
@@ -37,8 +38,18 @@ def session(cache: Path | None = None, *, offline: bool = False) -> requests.Ses
         str(cache),
         backend="sqlite",
         expire_after=requests_cache.NEVER_EXPIRE,
+        allowable_codes=(200, 404),
+        filter_fn=_cacheable,
         only_if_cached=offline,
     )
+
+
+def _cacheable(response: requests.Response) -> bool:
+    """Pages, and the 404 of a reference chapter older manuals lack (offline scrapes skip it too).
+
+    Any other 404 may be a glitch of the site: never cached, so the next scrape retries it.
+    """
+    return response.status_code == HTTPStatus.OK or (response.url or "").rsplit("/", 1)[-1] in REFERENCE_PAGES
 
 
 def _get(http: requests.Session, url: str) -> BeautifulSoup:
@@ -60,23 +71,57 @@ def _squash(s: str) -> str:
     return " ".join(s.split())
 
 
-def function_index(http: requests.Session, version: str) -> Iterator[tuple[str, str]]:
-    """``(name, url)`` of every function in the type/function matrix of the manual."""
-    soup = _get(http, INDEX.format(version=version))
+REFERENCE_PAGES = ("reference.html", "reference_sfcgal.html", "RT_reference.html")
+"""Reference chapters; each lists all of its function pages. ``reference_sfcgal`` is 3.5+."""
+
+
+def _name(text: str) -> str:
+    # "ST_MapAlgebra (expression version)": variants documented on their own page
+    return re.sub(r"\s*\([^)]*\)$", "", _squash(text))
+
+
+def _matrix(soup: BeautifulSoup, base: str) -> Iterator[tuple[str, str]]:
+    """Rows of the function matrix of ``PostGIS_Special_Functions_Index``."""
     # older manuals: <table class="informaltable">, newer: first table with a <col class="function">
     col = soup.find("col", attrs={"class": "function"})
     table = col.find_parent("table") if isinstance(col, Tag) else soup.find("table", attrs={"class": "informaltable"})
     if not isinstance(table, Tag) or not isinstance(body := table.find("tbody") or table, Tag):
         msg = "function matrix table not found"
         raise ValueError(msg)  # ruff: ignore[TRY004]
-    base = BASE.format(version=version)
-    seen: set[tuple[str, str]] = set()
     for row in body.find_all("tr"):
         cell = row.find("td")
         link = cell.find("a") if isinstance(cell, Tag) else None
-        if not isinstance(cell, Tag) or not isinstance(link, Tag):
-            continue
-        item = (_text(cell).strip(), urljoin(base, str(link["href"])))
+        if isinstance(cell, Tag) and isinstance(link, Tag):
+            yield _name(_text(cell)), urljoin(base, str(link["href"]))
+
+
+def _reference(soup: BeautifulSoup, base: str) -> Iterator[tuple[str, str]]:
+    """Function pages listed in a reference chapter's table of contents."""
+    for a in soup.select("span.refentrytitle a[href]"):
+        href = str(a["href"]).split("#", 1)[0]
+        if href:
+            yield _name(_text(a)), urljoin(base, href)
+
+
+def function_index(http: requests.Session, version: str) -> Iterator[tuple[str, str]]:
+    """``(name, url)`` of every documented function.
+
+    From the reference chapters, which list every function page, and the function matrix
+    of the special functions index (it misses e.g. the ``PostGIS_*_Version`` functions,
+    and older manuals list no raster functions there).
+    """
+    import requests  # ruff: ignore[PLC0415] - only needed when scraping
+
+    base = BASE.format(version=version)
+    pages = [_matrix(_get(http, INDEX.format(version=version)), base)]
+    for name in REFERENCE_PAGES:
+        try:
+            pages.append(_reference(_get(http, base + name), base))
+        except requests.HTTPError as err:
+            if err.response is None or err.response.status_code != HTTPStatus.NOT_FOUND:  # not in older manuals
+                raise
+    seen: set[tuple[str, str]] = set()
+    for item in (i for page in pages for i in page):
         if item not in seen:
             seen.add(item)
             yield item
@@ -174,6 +219,30 @@ def description(section: Tag | None) -> str | None:
     return "\n\n".join(t for t in texts if t) or None
 
 
+_DEPRECATED = re.compile(
+    r"^(?P<name>\w+) (?:is|has been) deprecated"
+    r"(?: as of (?P<version>\d+(?:\.\d+)*))?\.?\s*(?P<rest>.*)$",
+)
+
+
+def deprecation(soup: BeautifulSoup, name: str) -> str | None:
+    """Deprecation notice from the page's warning/note boxes, if it deprecates ``name`` itself.
+
+    The manual writes ``ST_MapAlgebraExpr is deprecated as of 2.1.0. Use ST_MapAlgebra
+    (expression version) instead.`` Notes about *other* deprecated functions ("Use of
+    Variant 1 is discouraged since ST_MapAlgebraFctNgb has been deprecated") don't count.
+    """
+    for box in soup.find_all("div", attrs={"class": ["warning", "note", "caution", "important"]}):
+        for p in box.find_all("p"):
+            m = _DEPRECATED.match(_squash(_text(p)))
+            if m is None or m["name"].lower() != name.lower():
+                continue
+            since = f" since PostGIS {m['version']}" if m["version"] else ""
+            rest = m["rest"].strip()
+            return f"Deprecated{since}." + (f" {rest}" if rest else "")
+    return None
+
+
 def see_also(section: Tag | None, base: str) -> list[SeeAlso]:
     if section is None:
         return []
@@ -213,6 +282,7 @@ def page(http: requests.Session, version: str, name: str, url: str) -> Function:
             signatures=list(signatures(soup)),
             see_also=see_also(sections.get("See Also"), base),
             examples=examples(sections),
+            deprecated=deprecation(soup, name),
         )
     except Exception as err:
         msg = f"could not parse {name} ({url})"
@@ -239,6 +309,7 @@ def merge(pages: list[Function]) -> Function:
         see_also=also,
         examples=first.examples,
         other_urls=[p.url for p in pages[1:]],
+        deprecated=next((p.deprecated for p in pages if p.deprecated), None),
     )
 
 
@@ -268,6 +339,7 @@ def scrape(
     by_name: dict[str, list[Function]] = {}
     for p in pages:
         by_name.setdefault(p.name, []).append(p)
-    funcs = [merge(ps) for ps in by_name.values() if any(p.signatures for p in ps)]
+    # kept without signatures too (rendering skips them): history needs every documented name
+    funcs = [merge(ps) for ps in by_name.values()]
     funcs.sort(key=lambda f: f.name.lower())
     return Snapshot(postgis_version=version, functions=funcs)

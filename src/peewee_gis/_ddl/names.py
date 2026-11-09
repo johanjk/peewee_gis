@@ -18,7 +18,7 @@ def quote_ident(*parts: str | None) -> str:
 
 
 def check_identifier(name: str, what: str = "identifier") -> str:
-    """``name`` if it is a plain unquoted SQL identifier (``ST_3DArea``), else ``ValueError``."""
+    """``name`` if it is a plain unquoted SQL identifier (``ST_3DDistance``), else ``ValueError``."""
     if not _IDENT.match(name):
         msg = f"invalid {what} {name!r}"
         raise ValueError(msg)

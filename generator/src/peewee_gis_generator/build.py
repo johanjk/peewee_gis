@@ -10,7 +10,7 @@ from pathlib import Path
 GENERATOR_SRC = Path(__file__).parents[1]
 SNAPSHOTS = GENERATOR_SRC.parent / "snapshots"
 
-POSTGIS_VERSION = "3.6"
+POSTGIS_VERSION = "3.7"
 """PostGIS version both packages render from (``snapshots/postgis-<version>.json``); the only place to bump."""
 
 
@@ -23,8 +23,13 @@ def snapshot_path(postgis_version: str = POSTGIS_VERSION, snapshots: Path = SNAP
 
 
 def digest(snapshot: Path, files: tuple[str, ...]) -> str:
-    """Hash of everything the output depends on: snapshot, generator sources, selected files."""
+    """Hash of everything the output depends on: the snapshots, generator sources, selected files."""
+    from .render.history import older_snapshots  # ruff: ignore[PLC0415] - with render_snapshot's jinja2
+
     h = hashlib.sha256(snapshot.read_bytes())
+    for older in older_snapshots(snapshot):  # removed functions come from these
+        h.update(older.name.encode())
+        h.update(older.read_bytes())
     h.update(",".join(files).encode())
     for p in sorted(GENERATOR_SRC.rglob("*")):
         if p.suffix in {".py", ".jinja"} and "__pycache__" not in p.parts:

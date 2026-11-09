@@ -55,7 +55,7 @@ class Function:
     """Parsed function page."""
 
     name: str
-    """SQL name, e.g. ``ST_3DArea``."""
+    """SQL name, e.g. ``ST_3DDistance``."""
     url: str
     summary: str | None
     description: str | None
@@ -64,6 +64,8 @@ class Function:
     examples: list[Example] = field(default_factory=list[Example])
     other_urls: list[str] = field(default_factory=list[str])
     """Further pages documenting overloads of the same name (e.g. the raster variant)."""
+    deprecated: str | None = None
+    """The manual's deprecation notice, e.g. ``Deprecated since PostGIS 2.1.0. Use ST_MapAlgebra instead.``"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,4 +102,5 @@ def _function(d: dict[str, Any]) -> Function:
         see_also=[SeeAlso(**x) for x in d["see_also"]],
         examples=[Example(**x) for x in d["examples"]],
         other_urls=d.get("other_urls", []),
+        deprecated=d.get("deprecated"),
     )

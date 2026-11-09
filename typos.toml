@@ -15,3 +15,5 @@ CPY = "CPY"
 nd = "nd"
 # PostGIS operator names (&<, &>)
 overright = "overright"
+# raster pixel types (8BUI: 8-bit unsigned integer)
+BUI = "BUI"

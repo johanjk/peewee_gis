@@ -72,7 +72,7 @@ Without it nothing changes at runtime, and type checking still passes: `st.Trans
 and `Model.geom.st` are just untyped (`Any`), so there is no completion, no docstrings and
 no checks on PostGIS calls. Everything else (fields, tiles, helpers) stays typed.
 
-The typing is generated for PostGIS 3.6. Functions missing from it still work
+The typing is generated for PostGIS 3.7. Functions missing from it still work
 (`st.Foo(...)` renders `ST_Foo(...)`); they are untyped. See
 [how the typing is generated](generator/README.md).
 

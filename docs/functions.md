@@ -31,7 +31,7 @@ assert sql(pg.st.Transform(Area.geom, 3857)) == sql(Area.geom.st.Transform(3857)
 assert sql(Area.geom.st.Transform(3857).Area())[0] == 'ST_Area(ST_Transform("t1"."geom", %s))'
 ```
 
-Names that start with a digit get an `n`: `st.n3DArea` is `ST_3DArea`. Functions without
+Names that start with a digit get an `n`: `st.n3DDistance` is `ST_3DDistance`. Functions without
 the prefix keep their name: `st.Box2D`, `st.postgis_srs_codes`, `st.CG_3DArea` (SFCGAL).
 Topology and tiger geocoder functions are not included; they live in their own schemas
 (use `pw.fn`).
@@ -74,6 +74,26 @@ Area.geom.st.Area().Transform(1)  # error: Transform needs a geometry
 Area.geom.st.Area(True)  # error: use_spheroid is geography-only
 Area.geom.as_geography().st.Area(True)  # ok
 ```
+
+Functions the manual deprecates are marked `@deprecated` (PEP 702), with the manual's
+replacement as message: editors strike them through, and type checkers report them when
+their deprecation check is on (pyright `reportDeprecated`, mypy `--enable-error-code
+deprecated`; ty warns by default).
+
+Functions that were documented in an older PostGIS manual (back to 3.2, the oldest
+supported version) but no longer are, stay available and typed, deprecated with what the
+manuals say: the last version documenting them and, if there was one, the deprecation
+notice naming the replacement. Upgrading PostGIS then shows a warning with the way forward
+instead of an unknown attribute.
+
+```py
+pg.st.MapAlgebraExpr(rast, "8BUI", "[rast] * 2")  # deprecated: use ST_MapAlgebra (expression version)
+Area.geom.st.n3DArea()  # deprecated since 3.5.0: use CG_3DArea
+Area.geom.st.Zmflag()  # spelled ST_ZMFlag since PostGIS 3.7: use st.ZMFlag
+```
+
+A function missing from the manual may still be installed: PostGIS keeps deprecated
+functions for a while, so the message only says what the manual shows.
 
 `StChain`, `StBound` and the SQL type markers (`peewee_gis.sqltypes.geometry`, ...) can be
 used in annotations; they exist at runtime with or without the stubs. Without the stubs,

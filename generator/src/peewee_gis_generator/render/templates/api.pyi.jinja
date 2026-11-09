@@ -3,10 +3,18 @@
 
 Docstrings are taken from the PostGIS manual:
 https://postgis.net/docs/manual-{{ version }}/
+{%- if oldest %}
+
+Functions documented since PostGIS {{ oldest }} but no longer in this manual are kept,
+marked ``@deprecated`` with what the manuals say about them.
+{%- endif %}
 """
 
 from collections.abc import Sequence
 from typing import Any, overload
+{%- if uses_deprecated %}
+from warnings import deprecated
+{%- endif %}
 
 from peewee_gis.sqltypes import Arg, Geom{% for m in markers %}, {{ m }}{% endfor %}
 from peewee_gis.st.function import Bound, Root, STFunction

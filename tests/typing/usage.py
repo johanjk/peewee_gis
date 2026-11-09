@@ -46,3 +46,13 @@ pg.st.NoSuchFunction(1)  # pyright: ignore[reportAttributeAccessIssue]
 # casts
 assert_type(Road.geom.as_geography().st, StBound[geography])
 assert_type(Road.geom.cast("geography").st.Length(), StChain[float])
+
+# deprecated in the manual: @deprecated (PEP 702), struck through in editors
+rast = pw.SQL("rast")
+pg.st.MapAlgebraExpr(rast, "8BUI", "[rast] * 2")  # pyright: ignore[reportDeprecated]
+pg.st.MapAlgebra(rast, 1, "8BUI", "[rast] * 2")
+Road.geom.st.n3DArea()  # pyright: ignore[reportDeprecated]  # SFCGAL: use CG_3DArea
+Road.geom.st.CG_3DArea()
+# documented in an older manual only: kept and deprecated, with the current spelling
+Road.geom.st.Zmflag()  # pyright: ignore[reportDeprecated]
+Road.geom.st.ZMFlag()

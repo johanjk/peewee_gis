@@ -33,7 +33,7 @@ def test_root_and_bound_render_the_same():
 
 
 def test_names_from_catalog():
-    assert sql(pg.st.n3DArea(Poly.geom))[0] == 'ST_3DArea("t1"."geom")'
+    assert sql(pg.st.n3DDistance(Poly.geom, Poly.geom))[0] == 'ST_3DDistance("t1"."geom", "t1"."geom")'
     assert sql(pg.st.Box2D(Poly.geom))[0] == 'Box2D("t1"."geom")'
     assert sql(pg.st.postgis_srs_codes("EPSG"))[0] == "postgis_srs_codes(%s)"
     assert catalog.NAMES["AsMVTGeom"] == "ST_AsMVTGeom"

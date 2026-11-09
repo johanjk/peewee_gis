@@ -114,7 +114,7 @@ def py_identifier(name: str) -> str:
 def py_name(sql_name: str) -> str:
     """Attribute name on ``st`` for an SQL function name.
 
-    ``ST_Area`` -> ``Area``, ``ST_3DArea`` -> ``n3DArea``; other names are kept
+    ``ST_Area`` -> ``Area``, ``ST_3DDistance`` -> ``n3DDistance``; other names are kept
     (``Box2D``, ``CG_3DArea``, ``postgis_srs``).
     """
     if sql_name.upper().startswith("ST_"):

@@ -17,11 +17,12 @@ Both are gitignored and rendered by each package's hatch build hook (`hatch_buil
 `stubs/hatch_build.py`, both calling `peewee_gis_generator.build`), for wheel and editable
 builds alike.
 
-* **scrape** (`peewee-gis-generator scrape [VERSION] [--cache FILE] [--offline]`) reads the
-  function index of the manual and every function page: synopsis (all overloads, across
-  the geometry and raster pages of a name), summary, description, see-also links and
-  examples. Core, raster and SFCGAL functions are kept; topology and tiger functions live in
-  their own schemas and are left out.
+* **scrape** (`peewee-gis-generator scrape [VERSION] [--cache FILE] [--offline]`) lists
+  the functions of the manual's reference chapters and its special functions index, and
+  reads every function page: synopsis (all overloads, across the geometry and raster pages
+  of a name), summary, description, see-also links, examples and deprecation notices (the
+  manual's warning boxes). Core, raster and SFCGAL functions are kept; topology and tiger
+  functions live in their own schemas and are left out.
 * **render** (`peewee-gis-generator render OUT_DIR [--only runtime|stubs] [--snapshot FILE]`) only
   needs jinja2, so builds are reproducible and offline; `poe generate` renders both into
   place. `render/corrections.py` patches defaults the manual's synopsis leaves out.
@@ -35,6 +36,9 @@ builds alike.
   signature with `self: ChainMethods[<SQL type of the first argument>]`, so overloads are
   selected by the type of the chained value;
 * `StChain[T]` (a function result) and `StBound[T]` (`Model.geom.st`).
+
+Functions with a deprecation notice get `@deprecated("<notice>")` (PEP 702) on every
+overload, and the notice opens their docstring.
 
 The output passes the project's ruff config (`poe lint:generated`), except PYI021
 (docstrings in a stub), N802/N803 (names as in PostGIS and its manual) and RUF002 (the
@@ -54,5 +58,12 @@ uv run poe generate
 uv run poe test:generator && uv run poe types:usage
 ```
 
-Commit the new snapshot. The test database image (`.github/docker/Dockerfile`, updated by
+Commit the new snapshot and keep the older ones: functions documented in an older snapshot
+but missing from the current one are rendered from the newest snapshot that has them,
+marked `@deprecated` ("Not in the PostGIS 3.8 manual (last documented in 3.7).
+Deprecated since 3.5.0: use CG_3DArea instead.", see `render/history.py`). Keep the
+snapshots of every [supported PostGIS version](https://postgis.net/development/source_code/);
+older ones can be deleted once a version is end of life.
+
+The test database image (`.github/docker/Dockerfile`, updated by
 Dependabot) is separate: it may run a newer PostGIS than the snapshot.

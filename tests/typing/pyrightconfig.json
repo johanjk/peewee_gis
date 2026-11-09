@@ -1,8 +1,11 @@
 {
-  "include": ["."],
+  "include": [
+    "."
+  ],
   "pythonVersion": "3.14",
   "typeCheckingMode": "standard",
   "reportUnnecessaryTypeIgnoreComment": "error",
   "venvPath": "../..",
-  "venv": ".venv"
+  "venv": ".venv",
+  "reportDeprecated": "error"
 }

@@ -1,7 +1,11 @@
 """Parsing of manual pages, from an inline fixture (no network)."""
 
+from io import BytesIO
+
 from bs4 import BeautifulSoup
 from peewee_gis_generator import scrape
+from requests.adapters import HTTPAdapter
+from urllib3 import HTTPResponse
 
 PAGE = """
 <html><body>
@@ -73,3 +77,58 @@ def test_scope():
     assert not scrape.in_scope("AddTopoGeometryColumn")
     assert not scrape.in_scope("Geocode")
     assert not scrape.in_scope('ST_X"]; import os  #')  # only plain identifiers reach the catalog
+
+
+WARNING = """
+<html><body><div class="refentry"><div class="refsection"><h2>Description</h2>
+<div class="warning"><table><tr><td><p>
+<a class="xref" href="RT_ST_MapAlgebraExpr.html">ST_MapAlgebraExpr</a> is deprecated as of 2.1.0. Use
+<a class="xref" href="RT_ST_MapAlgebra_expr.html">ST_MapAlgebra (expression version)</a> instead.
+</p></td></tr></table></div>
+<div class="warning"><table><tr><td><p>
+Use of Variant 1 is discouraged since ST_MapAlgebraFctNgb has been deprecated as of 2.1.0.
+</p></td></tr></table></div>
+</div></div></body></html>
+"""
+
+
+def test_deprecation():
+    page = BeautifulSoup(WARNING, "lxml")
+    assert scrape.deprecation(page, "ST_MapAlgebraExpr") == (
+        "Deprecated since PostGIS 2.1.0. Use ST_MapAlgebra (expression version) instead."
+    )
+    # a note about another deprecated function doesn't deprecate this one
+    assert scrape.deprecation(page, "ST_Sum4ma") is None
+    assert scrape.deprecation(soup(), "ST_TileEnvelope") is None
+
+
+class _Manual(HTTPAdapter):
+    """A manual with only ST_Area, without the SFCGAL chapter (as before PostGIS 3.5)."""
+
+    def send(self, request, *_args, **_kwargs):
+        raw = HTTPResponse(
+            body=BytesIO(b'<table class="informaltable"><tr><td><a href="ST_Area.html">ST_Area</a></td></tr></table>'),
+            headers={"Content-Type": "text/html"},
+            status=404 if any(x in (request.url or "") for x in ("sfcgal", "Gone")) else 200,
+            preload_content=False,
+            request_url=request.url,
+        )
+        return self.build_response(request, raw)
+
+
+def test_a_missing_chapter_is_cached_for_offline_scrapes(tmp_path):
+    http = scrape.session(tmp_path / "c.sqlite")
+    http.mount("https://", _Manual())
+    expected = [("ST_Area", "https://postgis.net/docs/manual-3.4/ST_Area.html")]
+    assert list(scrape.function_index(http, "3.4")) == expected
+    offline = scrape.session(tmp_path / "c.sqlite", offline=True)
+    assert list(scrape.function_index(offline, "3.4")) == expected  # the 404 came from the cache, not a 504
+
+
+def test_other_404s_are_not_cached(tmp_path):
+    """A page missing by a glitch of the site is retried by the next scrape."""
+    url = "https://postgis.net/docs/manual-3.4/ST_Gone.html"
+    http = scrape.session(tmp_path / "c.sqlite")
+    http.mount("https://", _Manual())
+    assert http.get(url).status_code == 404
+    assert scrape.session(tmp_path / "c.sqlite", offline=True).get(url).status_code == 504  # not cached

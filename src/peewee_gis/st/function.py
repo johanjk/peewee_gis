@@ -3,7 +3,7 @@
 ``st.Transform(geom, 4326)`` and ``Model.geom.st.Transform(4326)`` render the same
 ``ST_Transform("t1"."geom", 4326)``: when chained, the previous value is the first
 argument. Attribute names map to SQL names through the generated catalog
-(``Area`` -> ``ST_Area``, ``n3DArea`` -> ``ST_3DArea``, ``Box2D`` -> ``Box2D``).
+(``Area`` -> ``ST_Area``, ``n3DDistance`` -> ``ST_3DDistance``, ``Box2D`` -> ``Box2D``).
 
 The result of a call is converted according to its SQL type: geometry and geography
 become shapely geometries, box2d/box3d tuples, everything else is left to the
@@ -176,7 +176,7 @@ class STFunction(SpatialOperators, _Namespace, pw.Function):
         named = [NamedArgument(k.removesuffix("_"), adapt(v, srid)) for k, v in (kwargs or {}).items()]
         cat = result_category(name, args[0] if args else None)
         converter = CONVERTERS.get(cat)
-        check_identifier(name, "function name")  # rendered unquoted: ST_3DArea is case-insensitive
+        check_identifier(name, "function name")  # rendered unquoted: ST_3DDistance is case-insensitive
         qualified = f"{quote_ident(schema)}.{name}" if schema else name
         super().__init__(qualified, [*args, *named], coerce=converter is not None, python_value=converter)
         self._schema = schema
