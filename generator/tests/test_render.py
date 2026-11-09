@@ -83,6 +83,7 @@ def test_select_has_no_collisions(snapshot):
     assert len(names) == len(set(names))
     assert {"Area", "Transform", "AsMVT", "AsMVTGeom", "TileEnvelope", "n3DDistance", "Box2D"} <= set(names)
     assert "AddEdgeModFace" not in names  # topology schema
+    assert "InitTopoGeo" not in names
 
 
 def test_outputs_are_valid_python(rendered):
@@ -226,3 +227,13 @@ def test_outputs_pass_ruff(rendered):
         check=False,
     )
     assert fmt.returncode == 0, fmt.stdout
+
+
+def test_topology_overloads_are_left_out():
+    geom = Signature(args=[Argument("g", "geometry")], ret="integer")
+    topo = Signature(args=[Argument("tg", "topogeometry")], ret="integer")
+    (r,) = select([Function(name="ST_SRID", url="u", summary=None, description=None, signatures=[geom, topo])])
+    assert r.returns == {"geometry": "other"}
+    assert all("topogeometry" not in o and "tg:" not in o for o in r.root)
+    only_topo = Function(name="ST_TopoThing", url="u", summary=None, description=None, signatures=[topo])
+    assert select([only_topo]) == []

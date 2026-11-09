@@ -175,8 +175,14 @@ def signatures(soup: BeautifulSoup) -> Iterator[Signature]:
                 pending += _text(node)
             elif isinstance(node, Tag) and "pdparam" in (node.get("class") or []):
                 raw = _squash(_text(node))
-                name, _, default = raw.partition("=")
                 type_text = pending.rsplit(",", 1)[-1]
+                pending = ""
+                mode, _, rest = raw.partition(" ")
+                if mode.upper() == "OUT":  # a column of the result (setof record), not an argument
+                    continue
+                if mode.upper() == "INOUT":
+                    raw = rest
+                name, _, default = raw.partition("=")
                 variadic = "variadic" in type_text.lower()
                 args.append(
                     Argument(
@@ -186,7 +192,6 @@ def signatures(soup: BeautifulSoup) -> Iterator[Signature]:
                         variadic=variadic,
                     ),
                 )
-                pending = ""
             elif isinstance(node, Tag):
                 pending += _text(node)
         yield Signature(args=args, ret=ret)

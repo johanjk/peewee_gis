@@ -21,8 +21,9 @@ builds alike.
   the functions of the manual's reference chapters and its special functions index, and
   reads every function page: synopsis (all overloads, across the geometry and raster pages
   of a name), summary, description, see-also links, examples and deprecation notices (the
-  manual's warning boxes). Core, raster and SFCGAL functions are kept; topology and tiger
-  functions live in their own schemas and are left out.
+  manual's warning boxes). OUT parameters are result columns, not arguments. Core, raster
+  and SFCGAL functions are kept; topology and tiger functions (and topogeometry overloads)
+  live in their own schemas and are left out.
 * **render** (`peewee-gis-generator render OUT_DIR [--only runtime|stubs] [--snapshot FILE]`) only
   needs jinja2, so builds are reproducible and offline; `poe generate` renders both into
   place. `render/corrections.py` patches defaults the manual's synopsis leaves out.
@@ -56,7 +57,15 @@ SQL ones); arguments with defaults can be passed by name.
 uv run poe generate:refresh                    # scrape snapshots/postgis-<version>.json
 uv run poe generate
 uv run poe test:generator && uv run poe types:usage
+uv run poe setup && uv run poe test    # tests/test_catalog.py: the catalog against pg_proc
 ```
+
+The manual is not the database. `tests/test_catalog.py` checks the result against `pg_proc`
+of the test database: every function of the current manual is installed, every typed
+signature matches an installed overload (PostgreSQL normalises the manual's type names,
+trailing arguments with defaults may be left out), and every result conversion matches the
+installed return type. Against a newer PostGIS in the test image (see below) a failure
+shows what changed: time to scrape that version.
 
 Commit the new snapshot and keep the older ones: functions documented in an older snapshot
 but missing from the current one are rendered from the newest snapshot that has them,

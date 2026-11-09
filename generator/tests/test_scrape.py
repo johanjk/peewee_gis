@@ -132,3 +132,15 @@ def test_other_404s_are_not_cached(tmp_path):
     http.mount("https://", _Manual())
     assert http.get(url).status_code == 404
     assert scrape.session(tmp_path / "c.sqlite", offline=True).get(url).status_code == 504  # not cached
+
+
+def test_out_parameters_are_result_columns():
+    page = BeautifulSoup(
+        '<div class="funcsynopsis"><p><code class="funcdef">setof record <b class="fsfunc">ST_ValueCount</b>(</code>'
+        'raster <var class="pdparam">rast</var>, integer <var class="pdparam">nband=1</var>, '
+        'double precision <var class="pdparam">OUT value</var>, integer <var class="pdparam">OUT count</var>'
+        "<code>)</code>;</p></div>",
+        "lxml",
+    )
+    (sig,) = scrape.signatures(page)
+    assert [(a.name, a.type_, a.default) for a in sig.args] == [("rast", "raster", None), ("nband", "integer", "1")]

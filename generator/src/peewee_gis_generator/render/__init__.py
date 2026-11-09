@@ -31,12 +31,19 @@ if TYPE_CHECKING:
 
 TEMPLATES = Path(__file__).parent / "templates"
 SKIP_LEGACY = {"GeometryType"}  # collides with ST_GeometryType -> st.GeometryType
-TOPOLOGY_ARGS = {"atopology", "toponame", "topology_name", "topology"}
+TOPOLOGY_ARGS = {"atopology", "toponame", "topology_name", "topology", "topology_schema_name"}
+TOPOLOGY_TYPES = {"topogeometry"}
 
 
 def is_topology(f: Function) -> bool:
     """ST_ functions of postgis_topology live in the ``topology`` schema; left out."""
     return all(s.args and s.args[0].name.lower() in TOPOLOGY_ARGS for s in f.signatures)
+
+
+def without_topology(f: Function) -> Function:
+    """``f`` without its postgis_topology overloads (``ST_SRID(topogeometry)``, in the ``topology`` schema)."""
+    sigs = [s for s in f.signatures if not any(typemap.base(a.type_)[0] in TOPOLOGY_TYPES for a in s.args)]
+    return f if len(sigs) == len(f.signatures) else replace(f, signatures=sigs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,7 +214,7 @@ def select(functions: Iterable[Function], taken: Iterable[Rendered] = ()) -> lis
     """Render ``functions``; with ``taken`` (removed functions), attributes already in use are skipped."""
     used = {r.attr for r in taken}
     out: dict[str, Rendered] = {}
-    for f in functions:
+    for f in map(without_topology, functions):
         if f.name in SKIP_LEGACY or not f.signatures or is_topology(f):
             continue
         if not SQL_IDENT.match(f.name):  # the catalog is code: only plain identifiers get into it

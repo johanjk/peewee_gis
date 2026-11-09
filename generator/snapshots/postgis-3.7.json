@@ -15962,44 +15962,7 @@
    "description": "Returns a list of raster formats short_name,long_name and creator options of each format supported by GDAL.  Use the short_name as input in the format parameter of ST_AsGDALRaster.\nOptions vary depending on what drivers your libgdal was compiled with. create_options returns an xml formatted set of CreationOptionList/Option consisting of name and optional type, description and set of VALUE for each creator option for the specific driver.",
    "signatures": [
     {
-     "args": [
-      {
-       "name": "OUT_idx",
-       "type_": "integer",
-       "default": null,
-       "variadic": false
-      },
-      {
-       "name": "OUT_short_name",
-       "type_": "text",
-       "default": null,
-       "variadic": false
-      },
-      {
-       "name": "OUT_long_name",
-       "type_": "text",
-       "default": null,
-       "variadic": false
-      },
-      {
-       "name": "OUT_can_read",
-       "type_": "text",
-       "default": null,
-       "variadic": false
-      },
-      {
-       "name": "OUT_can_write",
-       "type_": "text",
-       "default": null,
-       "variadic": false
-      },
-      {
-       "name": "OUT_create_options",
-       "type_": "text",
-       "default": null,
-       "variadic": false
-      }
-     ],
+     "args": [],
      "ret": "setof record"
     }
    ],
@@ -36288,18 +36251,6 @@
        "type_": "double precision",
        "default": "0",
        "variadic": false
-      },
-      {
-       "name": "OUT_value",
-       "type_": "double precision",
-       "default": null,
-       "variadic": false
-      },
-      {
-       "name": "OUT_count",
-       "type_": "integer",
-       "default": null,
-       "variadic": false
       }
      ],
      "ret": "setof record"
@@ -36329,18 +36280,6 @@
        "type_": "double precision",
        "default": "0",
        "variadic": false
-      },
-      {
-       "name": "OUT_value",
-       "type_": "double precision",
-       "default": null,
-       "variadic": false
-      },
-      {
-       "name": "OUT_count",
-       "type_": "integer",
-       "default": null,
-       "variadic": false
       }
      ],
      "ret": "setof record"
@@ -36363,18 +36302,6 @@
        "name": "roundto",
        "type_": "double precision",
        "default": "0",
-       "variadic": false
-      },
-      {
-       "name": "OUT_value",
-       "type_": "double precision",
-       "default": null,
-       "variadic": false
-      },
-      {
-       "name": "OUT_count",
-       "type_": "integer",
-       "default": null,
        "variadic": false
       }
      ],
@@ -36504,18 +36431,6 @@
        "type_": "double precision",
        "default": "0",
        "variadic": false
-      },
-      {
-       "name": "OUT_value",
-       "type_": "double precision",
-       "default": null,
-       "variadic": false
-      },
-      {
-       "name": "OUT_count",
-       "type_": "integer",
-       "default": null,
-       "variadic": false
       }
      ],
      "ret": "setof record"
@@ -36544,18 +36459,6 @@
        "name": "roundto",
        "type_": "double precision",
        "default": "0",
-       "variadic": false
-      },
-      {
-       "name": "OUT_value",
-       "type_": "double precision",
-       "default": null,
-       "variadic": false
-      },
-      {
-       "name": "OUT_count",
-       "type_": "integer",
-       "default": null,
        "variadic": false
       }
      ],
@@ -36591,18 +36494,6 @@
        "name": "roundto",
        "type_": "double precision",
        "default": "0",
-       "variadic": false
-      },
-      {
-       "name": "OUT_value",
-       "type_": "double precision",
-       "default": null,
-       "variadic": false
-      },
-      {
-       "name": "OUT_count",
-       "type_": "integer",
-       "default": null,
        "variadic": false
       }
      ],
